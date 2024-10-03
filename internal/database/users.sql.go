@@ -7,7 +7,6 @@ package database
 
 import (
 	"context"
-
 	"time"
 
 	"github.com/google/uuid"
@@ -48,16 +47,57 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 	return i, err
 }
 
-func (q *Queries) UserExists(ctx context.Context, username string) (bool, error) {
-    var exists bool
+const deleteAllUsers = `-- name: DeleteAllUsers :exec
+DELETE FROM users
+`
 
-    // Execute the SQL command
+func (q *Queries) DeleteAllUsers(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, deleteAllUsers)
+	return err
+}
+
+const getUsers = `-- name: GetUsers :many
+SELECT id, created_at, updated_at, name FROM users
+`
+
+func (q *Queries) GetUsers(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, getUsers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Name,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i.Name)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+func (q *Queries) UserExists(ctx context.Context, username string) (bool, error) {
+	var exists bool
+
+	// Execute the SQL command
 	err := q.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE name = $1);`, username).Scan(&exists)
 
-    // Check for errors
-    if err != nil {
-        return false, err
-    }
+	// Check for errors
+	if err != nil {
+		return false, err
+	}
 
-    return exists, nil
+	return exists, nil
 }

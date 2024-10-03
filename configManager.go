@@ -25,6 +25,33 @@ type command struct {
 	args         []string
 }
 
+func handlerUsers(s *State, cmd command) error {
+	fmt.Println("user command executing")
+	usernames, err := s.db.GetUsers(context.Background())
+	if err != nil {
+		return err
+	}
+	for _, item := range usernames {
+
+		if item == s.cfg.Username {
+			fmt.Println(item + " (current)")
+			continue
+		}
+		fmt.Println(item)
+
+	}
+	return nil
+}
+func handlerReset(s *State, cmd command) error {
+	fmt.Println("reset command executing")
+
+	err := s.db.DeleteAllUsers(context.Background())
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
 func handlerLogin(s *State, cmd command) error {
 	fmt.Println("login command executing")
 	username := ""

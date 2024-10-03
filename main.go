@@ -22,7 +22,8 @@ func main() {
 	commands := Commands{cmd: make(map[string]func(*State, command) error)}
 	commands.register("login", handlerLogin)
 	commands.register("register", handlerRegister)
-
+	commands.register("reset", handlerReset)
+	commands.register("users", handlerUsers)
 	db, err := sql.Open("postgres", state.cfg.Db_url)
 	state.db = database.New(db)
 	if err != nil {
