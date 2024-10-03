@@ -47,26 +47,42 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 	return i, err
 }
 
-const deleteAllUsers = `-- name: DeleteAllUsers :exec
+const deleteUsers = `-- name: DeleteUsers :exec
 DELETE FROM users
 `
 
-func (q *Queries) DeleteAllUsers(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, deleteAllUsers)
+func (q *Queries) DeleteUsers(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, deleteUsers)
 	return err
+}
+
+const getUser = `-- name: GetUser :one
+SELECT id, created_at, updated_at, name FROM users WHERE name = $1
+`
+
+func (q *Queries) GetUser(ctx context.Context, name string) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUser, name)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Name,
+	)
+	return i, err
 }
 
 const getUsers = `-- name: GetUsers :many
 SELECT id, created_at, updated_at, name FROM users
 `
 
-func (q *Queries) GetUsers(ctx context.Context) ([]string, error) {
+func (q *Queries) GetUsers(ctx context.Context) ([]User, error) {
 	rows, err := q.db.QueryContext(ctx, getUsers)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []string
+	var items []User
 	for rows.Next() {
 		var i User
 		if err := rows.Scan(
@@ -77,7 +93,7 @@ func (q *Queries) GetUsers(ctx context.Context) ([]string, error) {
 		); err != nil {
 			return nil, err
 		}
-		items = append(items, i.Name)
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -86,18 +102,4 @@ func (q *Queries) GetUsers(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	return items, nil
-}
-
-func (q *Queries) UserExists(ctx context.Context, username string) (bool, error) {
-	var exists bool
-
-	// Execute the SQL command
-	err := q.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE name = $1);`, username).Scan(&exists)
-
-	// Check for errors
-	if err != nil {
-		return false, err
-	}
-
-	return exists, nil
 }

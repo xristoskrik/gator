@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
+	"html"
 	"io"
+	"net/http"
 	"os"
 	"time"
 
@@ -24,7 +27,103 @@ type command struct {
 	command_name string
 	args         []string
 }
+type RSSFeed struct {
+	Channel struct {
+		Title       string    `xml:"title"`
+		Link        string    `xml:"link"`
+		Description string    `xml:"description"`
+		Item        []RSSItem `xml:"item"`
+	} `xml:"channel"`
+}
 
+type RSSItem struct {
+	Title       string `xml:"title"`
+	Link        string `xml:"link"`
+	Description string `xml:"description"`
+	PubDate     string `xml:"pubDate"`
+}
+
+func fetchFeed(ctx context.Context, feedURL string) (*RSSFeed, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", feedURL, nil)
+	if err != nil {
+		return &RSSFeed{}, err
+	}
+
+	req.Header.Add("User-Agent", "gator")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch feed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var feed RSSFeed
+	if err := xml.Unmarshal(body, &feed); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal XML: %w", err)
+	}
+	feed.Channel.Title = html.UnescapeString(feed.Channel.Title)
+	feed.Channel.Description = html.UnescapeString(feed.Channel.Description)
+
+	// Unescape HTML entities in each item's Title and Description
+	for i := range feed.Channel.Item {
+		feed.Channel.Item[i].Title = html.UnescapeString(feed.Channel.Item[i].Title)
+		feed.Channel.Item[i].Description = html.UnescapeString(feed.Channel.Item[i].Description)
+	}
+	return &feed, nil
+
+}
+
+func handlerAgg(s *State, cmd command) error {
+	feed, err := fetchFeed(context.Background(), "https://www.wagslane.dev/index.xml")
+	if err != nil {
+		return err
+	}
+	for i := range feed.Channel.Item {
+		fmt.Println(feed.Channel.Item[i].Title)
+		fmt.Println(feed.Channel.Item[i].Description)
+	}
+	return nil
+}
+func handlerFeeds(s *State, cmd command) error {
+	feeds, err := s.db.GetFeeds(context.Background())
+	if err != nil {
+		return err
+	}
+	for _, item := range feeds {
+		fmt.Printf("%s\n%s\n%s\n", item.Name, item.Url, item.Username.String)
+	}
+	return nil
+}
+func handlerAddFeed(s *State, cmd command) error {
+	fmt.Println("add feed command executing")
+	if len(cmd.args) != 4 {
+		return fmt.Errorf("addfeed <name><url>")
+	}
+	user, err := s.db.GetUser(context.Background(), s.cfg.Username)
+	if err != nil {
+		return err
+	}
+	feed, err := s.db.CreateFeed(context.Background(), database.CreateFeedParams{
+		ID:        uuid.New(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Name:      os.Args[2],
+		Url:       os.Args[3],
+		UserID:    user.ID,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Println(feed.ID, feed.CreatedAt, feed.UpdatedAt, feed.Name, feed.Url)
+	return nil
+}
 func handlerUsers(s *State, cmd command) error {
 	fmt.Println("user command executing")
 	usernames, err := s.db.GetUsers(context.Background())
@@ -33,11 +132,11 @@ func handlerUsers(s *State, cmd command) error {
 	}
 	for _, item := range usernames {
 
-		if item == s.cfg.Username {
-			fmt.Println(item + " (current)")
+		if item.Name == s.cfg.Username {
+			fmt.Println(item.Name + " (current)")
 			continue
 		}
-		fmt.Println(item)
+		fmt.Println(item.Name)
 
 	}
 	return nil
@@ -45,7 +144,7 @@ func handlerUsers(s *State, cmd command) error {
 func handlerReset(s *State, cmd command) error {
 	fmt.Println("reset command executing")
 
-	err := s.db.DeleteAllUsers(context.Background())
+	err := s.db.DeleteUsers(context.Background())
 	if err != nil {
 		return err
 	}
@@ -59,15 +158,12 @@ func handlerLogin(s *State, cmd command) error {
 		return fmt.Errorf("login <username>")
 	}
 	username = os.Args[2]
-	exists, err := s.db.UserExists(context.Background(), username)
+	user, err := s.db.GetUser(context.Background(), username)
 	if err != nil {
-		return err
-	}
-
-	if !exists {
 		return fmt.Errorf("user dont exist")
 	}
-	err = s.cfg.SetUser(os.Args[2])
+
+	err = s.cfg.SetUser(user.Name)
 	if err != nil {
 		return err
 	}

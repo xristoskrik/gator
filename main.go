@@ -24,6 +24,9 @@ func main() {
 	commands.register("register", handlerRegister)
 	commands.register("reset", handlerReset)
 	commands.register("users", handlerUsers)
+	commands.register("agg", handlerAgg)
+	commands.register("addfeed", handlerAddFeed)
+	commands.register("feeds", handlerFeeds)
 	db, err := sql.Open("postgres", state.cfg.Db_url)
 	state.db = database.New(db)
 	if err != nil {
