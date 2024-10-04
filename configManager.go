@@ -79,7 +79,21 @@ func fetchFeed(ctx context.Context, feedURL string) (*RSSFeed, error) {
 	return &feed, nil
 
 }
+func handlerFollowing(s *State, cmd command, user database.User) error {
+	if len(os.Args) != 2 {
+		return fmt.Errorf("you dont need parameters")
+	}
 
+	feeds, err := s.db.GetFeedFollowsForUser(context.Background(), user.ID)
+	if err != nil {
+		return err
+	}
+	for _, item := range feeds {
+		fmt.Println(item.FeedName)
+	}
+
+	return nil
+}
 func handlerAgg(s *State, cmd command) error {
 	feed, err := fetchFeed(context.Background(), "https://www.wagslane.dev/index.xml")
 	if err != nil {
@@ -89,6 +103,37 @@ func handlerAgg(s *State, cmd command) error {
 		fmt.Println(feed.Channel.Item[i].Title)
 		fmt.Println(feed.Channel.Item[i].Description)
 	}
+	return nil
+}
+func createFeedFollow(s *State, user_id uuid.UUID, feed_id uuid.UUID) (database.CreateFeedFollowRow, error) {
+	feed_follow, err := s.db.CreateFeedFollow(context.Background(), database.CreateFeedFollowParams{
+		ID:        uuid.New(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		UserID:    user_id,
+		FeedID:    feed_id,
+	})
+	if err != nil {
+		return database.CreateFeedFollowRow{}, err
+	}
+
+	return feed_follow, nil
+}
+func handlerFollow(s *State, cmd command, user database.User) error {
+	if len(os.Args) != 3 {
+		return fmt.Errorf("follow <url>")
+	}
+
+	url := os.Args[2]
+	feed, err := s.db.GetFeedFromUrl(context.Background(), url)
+	if err != nil {
+		return err
+	}
+	feed_follow, err := createFeedFollow(s, user.ID, feed.ID)
+	if err != nil {
+		return err
+	}
+	fmt.Println(feed_follow)
 	return nil
 }
 func handlerFeeds(s *State, cmd command) error {
@@ -101,15 +146,26 @@ func handlerFeeds(s *State, cmd command) error {
 	}
 	return nil
 }
-func handlerAddFeed(s *State, cmd command) error {
+func handlerUnfollow(s *State, cmd command, user database.User) error {
+	if len(cmd.args) != 3 {
+		return fmt.Errorf("unfollow <url>")
+	}
+	url := os.Args[2]
+	err := s.db.DeleteFeedFollow(context.Background(), database.DeleteFeedFollowParams{
+		UserID: user.ID,
+		Url:    url,
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+func handlerAddFeed(s *State, cmd command, user database.User) error {
 	fmt.Println("add feed command executing")
 	if len(cmd.args) != 4 {
 		return fmt.Errorf("addfeed <name><url>")
 	}
-	user, err := s.db.GetUser(context.Background(), s.cfg.Username)
-	if err != nil {
-		return err
-	}
+
 	feed, err := s.db.CreateFeed(context.Background(), database.CreateFeedParams{
 		ID:        uuid.New(),
 		CreatedAt: time.Now(),
@@ -122,7 +178,24 @@ func handlerAddFeed(s *State, cmd command) error {
 		return err
 	}
 	fmt.Println(feed.ID, feed.CreatedAt, feed.UpdatedAt, feed.Name, feed.Url)
+	_, err = createFeedFollow(s, user.ID, feed.ID)
+	if err != nil {
+		return err
+	}
 	return nil
+}
+func middlewareLoggedIn(handler func(s *State, cmd command, user database.User) error) func(*State, command) error {
+	return func(s *State, cmd command) error {
+		// Retrieve the user from the session or request context
+		user, err := s.db.GetUser(context.Background(), s.cfg.Username)
+		if err != nil {
+			// If there's no logged-in user, return an appropriate error
+			return fmt.Errorf("user must be logged in to access this resource")
+		}
+
+		// Call the original handler with the user
+		return handler(s, cmd, user)
+	}
 }
 func handlerUsers(s *State, cmd command) error {
 	fmt.Println("user command executing")
