@@ -9,6 +9,11 @@ import (
 	"github.com/xristoskrik/gator/internal/database"
 )
 
+type State struct {
+	db  *database.Queries
+	cfg *Config
+}
+
 func main() {
 
 	config, err := Read()
