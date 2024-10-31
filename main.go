@@ -35,6 +35,7 @@ func main() {
 	commands.register("follow", middlewareLoggedIn(handlerFollow))
 	commands.register("following", middlewareLoggedIn(handlerFollowing))
 	commands.register("unfollow", middlewareLoggedIn(handlerUnfollow))
+	commands.register("browse", middlewareLoggedIn(handlerBrowse))
 	db, err := sql.Open("postgres", state.cfg.Db_url)
 	state.db = database.New(db)
 	if err != nil {

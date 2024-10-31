@@ -1,0 +1,1 @@
+gator is a blog aggregator created with go, needs proper documentation
